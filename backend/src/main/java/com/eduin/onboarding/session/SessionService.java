@@ -5,6 +5,7 @@ import com.eduin.onboarding.catalog.DocumentSide;
 import com.eduin.onboarding.catalog.DocumentTypeSpec;
 import com.eduin.onboarding.common.error.ApiException;
 import com.eduin.onboarding.common.error.ErrorCode;
+import com.eduin.onboarding.decision.DecisionService;
 import com.eduin.onboarding.processing.AuthenticityAnalyzer;
 import com.eduin.onboarding.processing.AuthenticityResult;
 import com.eduin.onboarding.processing.ClassificationResult;
@@ -38,6 +39,7 @@ public class SessionService {
     private final ImageStorageService imageStorage;
     private final OcrEngine ocrEngine;
     private final AuthenticityAnalyzer authenticityAnalyzer;
+    private final DecisionService decisionService;
     private final ObjectMapper objectMapper;
     private final Duration sessionTtl;
 
@@ -47,6 +49,7 @@ public class SessionService {
                           ImageStorageService imageStorage,
                           OcrEngine ocrEngine,
                           AuthenticityAnalyzer authenticityAnalyzer,
+                          DecisionService decisionService,
                           ObjectMapper objectMapper,
                           @Value("${app.session.ttl-minutes}") long ttlMinutes) {
         this.catalog = catalog;
@@ -55,6 +58,7 @@ public class SessionService {
         this.imageStorage = imageStorage;
         this.ocrEngine = ocrEngine;
         this.authenticityAnalyzer = authenticityAnalyzer;
+        this.decisionService = decisionService;
         this.objectMapper = objectMapper;
         this.sessionTtl = Duration.ofMinutes(ttlMinutes);
     }
@@ -141,21 +145,28 @@ public class SessionService {
         OnboardingSession session = loadSession(sessionId);
         expireIfNeeded(session);
 
+        List<DocumentCapture> captures = captureRepository.findBySessionId(sessionId);
         Map<DocumentSide, SessionDetailResponse.SideSummary> sides = new EnumMap<>(DocumentSide.class);
-        for (DocumentCapture c : captureRepository.findBySessionId(sessionId)) {
+        for (DocumentCapture c : captures) {
             sides.put(c.getSide(), new SessionDetailResponse.SideSummary(
                     c.getDetectedType(), c.getClassificationConfidence(),
                     c.getAuthenticityScore(), c.getVeto(), c.getCreatedAt()));
         }
 
-        // Consolidación y decisión llegan con los módulos ocr/authenticity/decision reales
+        SessionDetailResponse.Consolidated consolidated = null;
+        if (session.getStatus() == SessionStatus.COMPLETED && !captures.isEmpty()) {
+            DecisionService.Evaluation eval = decisionService.evaluate(specOf(session), captures);
+            consolidated = new SessionDetailResponse.Consolidated(
+                    eval.fields(), eval.crossChecks(), eval.authenticityScore());
+        }
+
         SessionDetailResponse.Decision decision = session.getDecisionOutcome() == null ? null
                 : new SessionDetailResponse.Decision(session.getDecisionOutcome(),
                         session.getDecisionReasons() == null ? List.of()
                                 : List.of(session.getDecisionReasons().split(",")));
 
         return new SessionDetailResponse(session.getId(), session.getDocumentType(), session.getStatus(),
-                session.getCreatedAt(), session.getExpiresAt(), sides, null, decision);
+                session.getCreatedAt(), session.getExpiresAt(), sides, consolidated, decision);
     }
 
     private OnboardingSession loadSession(UUID sessionId) {
@@ -188,6 +199,12 @@ public class SessionService {
         captures.forEach(c -> captured.put(c.getSide(), true));
         boolean allCaptured = spec.sides().stream().allMatch(captured::containsKey);
         session.setStatus(allCaptured ? SessionStatus.COMPLETED : SessionStatus.IN_PROGRESS);
+
+        if (allCaptured) {
+            DecisionService.Evaluation eval = decisionService.evaluate(spec, captures);
+            session.setDecisionOutcome(eval.outcome());
+            session.setDecisionReasons(eval.reasons().isEmpty() ? null : String.join(",", eval.reasons()));
+        }
     }
 
     private DocumentTypeSpec specOf(OnboardingSession session) {

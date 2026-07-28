@@ -47,6 +47,7 @@ public class TesseractOcrEngineAdapter implements OcrEngine {
             Map.entry("nombre", "firstNames"),
             Map.entry("fechaNacimiento", "birthDate"),
             Map.entry("fechaVencimiento", "expiryDate"),
+            Map.entry("fechaExpiracion", "expiryDate"),
             Map.entry("fechaValidez", "expiryDate"),
             Map.entry("fechaVigencia", "expiryDate"),
             Map.entry("fechaExpedicion", "issueDate"),
