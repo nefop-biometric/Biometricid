@@ -1,0 +1,48 @@
+# Onboarding — Verificación de documentos de identidad
+
+Sistema de onboarding con documentos de identidad de 5 países (Colombia, España, Ecuador, Perú, Panamá). Proyecto nuevo, iniciado 2026-07-27, reemplaza el enfoque de 3 servicios del proyecto anterior por **un backend modular único**.
+
+## Estructura
+
+```
+onboarding/
+├── docs/
+│   ├── 01-catalogo-documentos.md   ← 14 tipos de documento, campos y validaciones
+│   └── 02-contrato-api.md          ← endpoints, flujo de sesión, reglas de decisión
+├── backend/                        ← Spring Boot 3 / Java 17 (puerto 8090)
+└── frontend/                       ← HTML sin build (puerto 5500)            [pendiente]
+```
+
+## Build y arranque del backend
+
+```bash
+cd backend
+C:/Users/GSE/Maven/bin/mvn -q package -Dmaven.test.skip=true
+"/c/Program Files/Microsoft/jdk-17.0.19.10-hotspot/bin/java" -jar target/onboarding-backend-1.0.0.jar
+```
+
+> ⚠️ El `java` del PATH es Java 8 — arrancar SIEMPRE con el JDK 17 de `JAVA_HOME` (ruta de arriba).
+> ⚠️ Matar el proceso java antes de recompilar (jar bloqueado en Windows).
+
+- Swagger UI: http://localhost:8090/swagger-ui.html
+- Health: http://localhost:8090/actuator/health
+- BD: `onboarding_db` en PostgreSQL 16 local (postgres/postgres). El esquema lo gobierna Flyway (`backend/src/main/resources/db/migration/`); Hibernate solo valida (`ddl-auto=validate`).
+- Imágenes capturadas: `backend/captured-documents/{sessionId}/{FRONT|BACK}.jpg`
+
+## Stack
+
+- **Backend**: Spring Boot 3.2, Java 17, Tess4J (OCR), OpenCV/bytedeco (antifraude), PostgreSQL.
+- **Frontend**: `index.html` único sin build, servido con `npx http-server -p 5500 -c-1`.
+- **Build**: Maven (`C:\Users\GSE\Maven\bin\mvn`), JDK 17 vía `JAVA_HOME`.
+
+## Estado
+
+- [x] Catálogo de documentos definido (pendiente validar campos "por confirmar" con imágenes reales)
+- [x] Contrato de API definido
+- [x] Esqueleto del backend (Flyway + Swagger + manejo de errores del contrato)
+- [x] Módulo catalog + session (flujo completo probado con curl: crear sesión, subir caras, recaptura, casos de error)
+- [ ] Módulo OCR (clasificación + extractores por tipo) — enchufar en `OcrEngine` (hoy `NoOpOcrEngine`)
+- [ ] Módulo authenticity (portar reglas del proyecto anterior) — enchufar en `AuthenticityAnalyzer` (hoy `NoOpAuthenticityAnalyzer`)
+- [ ] Módulo decision (consolidación frente/reverso + APPROVED/REVIEW/REJECTED)
+- [ ] Endpoint NFC para COL_PA
+- [ ] Frontend

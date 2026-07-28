@@ -1,0 +1,14 @@
+# Build
+backend/target/
+
+# Logs
+*.log
+backend/nohup.out
+
+# Imágenes capturadas de documentos de identidad — NUNCA subir (datos personales)
+backend/captured-documents/
+
+# IDE
+.idea/
+.vscode/
+*.iml
