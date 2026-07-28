@@ -23,6 +23,9 @@
         <!-- Flyway 10.x requerido: PostgreSQL 16 no está soportado por el 9.22 que trae Boot 3.2 -->
         <flyway.version>10.15.0</flyway.version>
         <springdoc.version>2.5.0</springdoc.version>
+        <tess4j.version>5.8.0</tess4j.version>
+        <javacv.version>1.5.10</javacv.version>
+        <zxing.version>3.5.3</zxing.version>
     </properties>
 
     <dependencies>
@@ -62,6 +65,36 @@
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
             <version>${springdoc.version}</version>
+        </dependency>
+
+        <!-- OCR: Tesseract vía Tess4J -->
+        <dependency>
+            <groupId>net.sourceforge.tess4j</groupId>
+            <artifactId>tess4j</artifactId>
+            <version>${tess4j.version}</version>
+        </dependency>
+        <!-- Preprocesado de imagen (y futuro módulo antifraude): OpenCV -->
+        <dependency>
+            <groupId>org.bytedeco</groupId>
+            <artifactId>javacv-platform</artifactId>
+            <version>${javacv.version}</version>
+        </dependency>
+        <!-- Códigos de barras PDF417/QR (reverso de la cédula colombiana) -->
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>core</artifactId>
+            <version>${zxing.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>javase</artifactId>
+            <version>${zxing.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
         </dependency>
 
         <dependency>

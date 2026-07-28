@@ -102,15 +102,16 @@ public class SessionService {
 
         ImageStorageService.StoredImage stored = imageStorage.store(sessionId, side, imageBytes);
 
-        // Pipeline: clasificación → OCR → antifraude (implementaciones NoOp por ahora)
-        ClassificationResult classification = ocrEngine.classify(imageBytes, spec, side);
+        // Pipeline: OCR (clasificación + extracción en una pasada) → antifraude
+        OcrEngine.SideOcrOutcome ocrOutcome = ocrEngine.process(imageBytes, spec, side);
+        ClassificationResult classification = ocrOutcome.classification();
         if (classification != null && !classification.matchesSession()) {
             throw new ApiException(ErrorCode.DOCUMENT_TYPE_MISMATCH,
                     "La imagen corresponde a " + classification.detectedType()
                             + " pero la sesión es " + spec.code(),
                     sessionId, Map.of("detectedType", classification.detectedType()));
         }
-        OcrResult ocr = ocrEngine.extract(imageBytes, spec, side);
+        OcrResult ocr = ocrOutcome.ocr();
         AuthenticityResult authenticity = authenticityAnalyzer.analyze(imageBytes, spec, side);
 
         DocumentCapture capture = existing != null ? existing

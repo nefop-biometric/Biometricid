@@ -41,7 +41,7 @@ C:/Users/GSE/Maven/bin/mvn -q package -Dmaven.test.skip=true
 - [x] Contrato de API definido
 - [x] Esqueleto del backend (Flyway + Swagger + manejo de errores del contrato)
 - [x] Módulo catalog + session (flujo completo probado con curl: crear sesión, subir caras, recaptura, casos de error)
-- [ ] Módulo OCR (clasificación + extractores por tipo) — enchufar en `OcrEngine` (hoy `NoOpOcrEngine`)
+- [x] Módulo OCR — portado del proyecto anterior (14 extractores, MRZ TD1/TD3 con gating reforzado por plausibilidad de fechas, PDF417/QR, clasificador). Requiere Tesseract instalado en `C:\Program Files\Tesseract-OCR` (tessdata: spa, cat, eng, mrz). Probado con imágenes reales COL_CC_NEW y ESP_DNI_OLD.
 - [ ] Módulo authenticity (portar reglas del proyecto anterior) — enchufar en `AuthenticityAnalyzer` (hoy `NoOpAuthenticityAnalyzer`)
 - [ ] Módulo decision (consolidación frente/reverso + APPROVED/REVIEW/REJECTED)
 - [ ] Endpoint NFC para COL_PA
