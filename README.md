@@ -44,5 +44,7 @@ C:/Users/GSE/Maven/bin/mvn -q package -Dmaven.test.skip=true
 - [x] Módulo OCR — portado del proyecto anterior (14 extractores, MRZ TD1/TD3 con gating reforzado por plausibilidad de fechas, PDF417/QR, clasificador). Requiere Tesseract instalado en `C:\Program Files\Tesseract-OCR` (tessdata: spa, cat, eng, mrz). Probado con imágenes reales COL_CC_NEW y ESP_DNI_OLD.
 - [x] Módulo authenticity — portado de true-document-backend: recorte del documento, detección de recaptura/fotocopia/manipulación (rostro Haar + anillo), estructura, MRZ de pasaporte. Regla de veto por cara (crítico <0.60 cards / <0.35 pasaportes).
 - [x] Módulo decision — consolidación de campos por confianza, cross-checks (Levenshtein frente/reverso ≤2, vencimiento), regla de peor cara (0.55/0.45 con arrastre) y decisión APPROVED/REVIEW/REJECTED con razones.
+- [x] Frontend — `frontend/index.html` sin build: selector desde el catálogo, captura webcam (o subir archivo), flujo por pasos y pantalla de resultado (decisión, campos, verificaciones, score por cara). Servir con `python -m http.server 5500 --directory frontend`.
 - [ ] Endpoint NFC para COL_PA
-- [ ] Frontend
+- [ ] Slim del jar (~790MB por javacv-platform; usar classifier de plataforma)
+- [ ] Calibrar MRZ del reverso colombiano y PDF417 con cédulas físicas

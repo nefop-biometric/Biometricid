@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Onboarding — Verificación de identidad</title>
+<style>
+  :root {
+    --primary: #1a56db; --primary-dark: #1240a8;
+    --ok: #0e9f6e; --warn: #c27803; --bad: #e02424;
+    --bg: #f4f6fb; --card: #ffffff; --text: #1f2a44; --muted: #64748b;
+    --border: #e2e8f0; --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 1.05rem; font-weight: 600; }
+  header .badge { font-size: .7rem; background: #e8efff; color: var(--primary); border-radius: 999px; padding: 3px 10px; font-weight: 600; }
+  main { max-width: 860px; margin: 24px auto; padding: 0 16px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; margin-bottom: 18px; }
+  .card h2 { font-size: .95rem; margin-bottom: 14px; }
+  .steps { display: flex; gap: 8px; margin-bottom: 18px; font-size: .78rem; }
+  .step { flex: 1; text-align: center; padding: 8px 4px; border-radius: 8px; background: #e9edf5; color: var(--muted); font-weight: 600; }
+  .step.active { background: var(--primary); color: #fff; }
+  .step.done { background: #d9f2e8; color: var(--ok); }
+  select, button { font: inherit; }
+  select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; border: none; border-radius: 8px; padding: 11px 20px; font-weight: 600; cursor: pointer; font-size: .9rem; }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-secondary { background: #eef2f9; color: var(--text); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .cam-wrap { position: relative; background: #0b1220; border-radius: 12px; overflow: hidden; aspect-ratio: 16/10; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+  video, #preview-img { width: 100%; height: 100%; object-fit: contain; }
+  .frame-guide { position: absolute; inset: 8% 12%; border: 2.5px dashed rgba(255,255,255,.65); border-radius: 12px; pointer-events: none; }
+  .hint { font-size: .8rem; color: var(--muted); margin-bottom: 10px; }
+  .error-box { background: #fdeaea; border: 1px solid #f5c2c2; color: var(--bad); border-radius: 8px; padding: 10px 14px; font-size: .85rem; margin-top: 12px; display: none; }
+  .spinner { display: none; align-items: center; gap: 10px; margin-top: 12px; font-size: .85rem; color: var(--muted); }
+  .spinner.on { display: flex; }
+  .spinner i { width: 18px; height: 18px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .hidden { display: none !important; }
+  /* Resultados */
+  .verdict { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 12px; margin-bottom: 16px; }
+  .verdict.APPROVED { background: #e6f7f0; border: 1px solid #b5e5d2; }
+  .verdict.REVIEW   { background: #fdf3e1; border: 1px solid #f0d8a8; }
+  .verdict.REJECTED { background: #fdeaea; border: 1px solid #f5c2c2; }
+  .verdict .big { font-size: 1.25rem; font-weight: 700; }
+  .verdict.APPROVED .big { color: var(--ok); } .verdict.REVIEW .big { color: var(--warn); } .verdict.REJECTED .big { color: var(--bad); }
+  .score-pill { margin-left: auto; text-align: center; }
+  .score-pill b { font-size: 1.4rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  td, th { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+  th { color: var(--muted); font-weight: 600; font-size: .75rem; text-transform: uppercase; }
+  .chip { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: .72rem; font-weight: 700; }
+  .chip.ok { background: #d9f2e8; color: var(--ok); } .chip.bad { background: #fbdcdc; color: var(--bad); }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Onboarding — Verificación de identidad</h1>
+  <span class="badge">v1</span>
+</header>
+<main>
+  <div class="steps">
+    <div class="step" id="st-0">1 · Documento</div>
+    <div class="step" id="st-1">2 · Frente</div>
+    <div class="step" id="st-2">3 · Reverso</div>
+    <div class="step" id="st-3">4 · Resultado</div>
+  </div>
+
+  <!-- Paso 1: selección de documento -->
+  <section class="card" id="panel-select">
+    <h2>Selecciona tu tipo de documento</h2>
+    <div class="hint">El catálogo se carga desde el backend — países: Colombia, España, Ecuador, Perú y Panamá.</div>
+    <select id="doc-select"><option>Cargando catálogo…</option></select>
+    <div style="margin-top:14px">
+      <button class="btn btn-primary" id="btn-start" disabled>Iniciar verificación</button>
+    </div>
+    <div class="error-box" id="err-select"></div>
+  </section>
+
+  <!-- Paso 2/3: captura -->
+  <section class="card hidden" id="panel-capture">
+    <h2 id="capture-title">Captura el frente del documento</h2>
+    <div class="hint">Ubica el documento dentro de la guía, con buena luz y sin reflejos.</div>
+    <div class="cam-wrap">
+      <video id="video" autoplay playsinline class="hidden"></video>
+      <img id="preview-img" class="hidden" alt="captura">
+      <div class="frame-guide" id="frame-guide"></div>
+    </div>
+    <div class="row">
+      <button class="btn btn-primary" id="btn-shoot">📷 Capturar</button>
+      <button class="btn btn-secondary" id="btn-retake" style="display:none">Repetir</button>
+      <button class="btn btn-primary" id="btn-send" style="display:none">Enviar y analizar</button>
+      <label class="btn btn-secondary" style="cursor:pointer">
+        Subir archivo <input type="file" id="file-input" accept="image/*" style="display:none">
+      </label>
+    </div>
+    <div class="spinner" id="spin-capture"><i></i><span>Analizando documento (OCR + antifraude)…</span></div>
+    <div class="error-box" id="err-capture"></div>
+  </section>
+
+  <!-- Paso 4: resultado -->
+  <section class="card hidden" id="panel-result">
+    <div class="verdict" id="verdict-box">
+      <div>
+        <div class="big" id="verdict-text">—</div>
+        <div class="hint" id="verdict-reasons" style="margin:0"></div>
+      </div>
+      <div class="score-pill"><b id="verdict-score">—</b><div class="hint" style="margin:0">autenticidad</div></div>
+    </div>
+    <div class="grid-2">
+      <div>
+        <h2>Datos extraídos</h2>
+        <table id="fields-table"><tbody></tbody></table>
+      </div>
+      <div>
+        <h2>Verificaciones</h2>
+        <table id="checks-table"><tbody></tbody></table>
+        <h2 style="margin-top:16px">Análisis por cara</h2>
+        <table id="sides-table"><tbody></tbody></table>
+      </div>
+    </div>
+    <div style="margin-top:18px">
+      <button class="btn btn-secondary" id="btn-restart">Nueva verificación</button>
+    </div>
+  </section>
+</main>
+
+<script>
+const API = 'http://localhost:8090/api/v1';
+const FIELD_LABELS = {
+  documentNumber: 'Número de documento', firstNames: 'Nombres', lastNames: 'Apellidos',
+  birthDate: 'Fecha de nacimiento', expiryDate: 'Vence', issueDate: 'Expedición',
+  sex: 'Sexo', nationality: 'Nacionalidad', bloodType: 'RH', birthPlace: 'Lugar de nacimiento',
+  issuePlace: 'Lugar de expedición', height: 'Estatura', supportNumber: 'Nº de soporte',
+  personalNumber: 'Nº personal', civilStatus: 'Estado civil', birthCountry: 'País de nacimiento'
+};
+const CHECK_LABELS = {
+  FRONT_BACK_NUMBER_MATCH: 'Número frente/reverso', FRONT_BACK_LASTNAMES_MATCH: 'Apellidos frente/reverso',
+  EXPIRY_VALID: 'Documento vigente', RECAPTURE_DETECTION: 'Recaptura de pantalla',
+  PHOTOCOPY_DETECTION: 'Fotocopia', TAMPERING_DETECTION: 'Manipulación / montaje',
+  DOCUMENT_STRUCTURE: 'Estructura del documento', MRZ_PRESENCE: 'Zona MRZ'
+};
+const REASON_LABELS = {
+  AUTHENTICITY_VETO: 'veto del análisis antifraude', DOCUMENT_EXPIRED: 'documento vencido',
+  FRONT_BACK_MISMATCH: 'los datos del frente y el reverso no coinciden',
+  LOW_AUTHENTICITY_SCORE: 'score de autenticidad en zona de revisión',
+  AUTHENTICITY_UNAVAILABLE: 'análisis de autenticidad no disponible',
+  DOCUMENT_NUMBER_NOT_READ: 'no se pudo leer el número de documento'
+};
+
+let catalog = [], session = null, spec = null;
+let sideQueue = [], currentSide = null, capturedBlob = null, stream = null;
+
+const $ = id => document.getElementById(id);
+const show = (id, on = true) => $(id).classList.toggle('hidden', !on);
+
+function setStep(n) {
+  for (let i = 0; i < 4; i++) {
+    $('st-' + i).className = 'step' + (i < n ? ' done' : i === n ? ' active' : '');
+  }
+}
+function showError(id, msg) { const el = $(id); el.textContent = msg; el.style.display = msg ? 'block' : 'none'; }
+
+async function api(path, options) {
+  const res = await fetch(API + path, options);
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const msg = body && body.message ? body.message : 'Error ' + res.status;
+    const err = new Error(msg); err.code = body && body.code; throw err;
+  }
+  return body;
+}
+
+// ── Paso 1: catálogo ─────────────────────────────────────────────
+async function loadCatalog() {
+  try {
+    catalog = await api('/catalog/documents');
+    const byCountry = {};
+    catalog.forEach(d => (byCountry[d.country] = byCountry[d.country] || []).push(d));
+    const names = { COL: 'Colombia', ESP: 'España', ECU: 'Ecuador', PER: 'Perú', PAN: 'Panamá' };
+    $('doc-select').innerHTML = '<option value="">— Selecciona —</option>' +
+      Object.entries(byCountry).map(([c, docs]) =>
+        `<optgroup label="${names[c] || c}">` +
+        docs.map(d => `<option value="${d.code}">${d.name}</option>`).join('') +
+        '</optgroup>').join('');
+  } catch (e) {
+    showError('err-select', 'No se pudo cargar el catálogo: ' + e.message + '. ¿Está corriendo el backend en el puerto 8090?');
+  }
+}
+$('doc-select').addEventListener('change', () => { $('btn-start').disabled = !$('doc-select').value; });
+
+$('btn-start').addEventListener('click', async () => {
+  showError('err-select', '');
+  try {
+    spec = catalog.find(d => d.code === $('doc-select').value);
+    session = await api('/onboarding/sessions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ documentType: spec.code, metadata: { userAgent: navigator.userAgent } })
+    });
+    sideQueue = [...session.requiredSides];
+    show('panel-select', false);
+    nextSide();
+  } catch (e) { showError('err-select', e.message); }
+});
+
+// ── Paso 2/3: captura ────────────────────────────────────────────
+async function nextSide() {
+  if (!sideQueue.length) { return showResult(); }
+  currentSide = sideQueue.shift();
+  setStep(currentSide === 'FRONT' ? 1 : 2);
+  $('capture-title').textContent = currentSide === 'FRONT'
+    ? (spec.sides.length === 1 ? 'Captura la página de datos' : 'Captura el frente del documento')
+    : 'Captura el reverso del documento';
+  capturedBlob = null;
+  show('panel-capture');
+  resetCaptureUi();
+  await startCamera();
+}
+
+function resetCaptureUi() {
+  show('video'); show('preview-img', false);
+  $('btn-shoot').style.display = ''; $('btn-retake').style.display = 'none'; $('btn-send').style.display = 'none';
+  $('frame-guide').style.display = '';
+  showError('err-capture', '');
+}
+
+async function startCamera() {
+  stopCamera();
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+    });
+    $('video').srcObject = stream;
+  } catch (e) {
+    showError('err-capture', 'No se pudo acceder a la cámara (' + e.name + '). Puedes subir un archivo.');
+  }
+}
+function stopCamera() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
+
+$('btn-shoot').addEventListener('click', () => {
+  const video = $('video');
+  if (!video.videoWidth) { return showError('err-capture', 'La cámara aún no está lista.'); }
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  canvas.toBlob(b => setCaptured(b), 'image/jpeg', 0.92);
+});
+
+$('file-input').addEventListener('change', e => {
+  if (e.target.files[0]) { setCaptured(e.target.files[0]); }
+  e.target.value = '';
+});
+
+function setCaptured(blob) {
+  capturedBlob = blob;
+  $('preview-img').src = URL.createObjectURL(blob);
+  show('video', false); show('preview-img');
+  $('frame-guide').style.display = 'none';
+  $('btn-shoot').style.display = 'none';
+  $('btn-retake').style.display = ''; $('btn-send').style.display = '';
+  showError('err-capture', '');
+}
+
+$('btn-retake').addEventListener('click', () => { resetCaptureUi(); startCamera(); });
+
+$('btn-send').addEventListener('click', async () => {
+  if (!capturedBlob) return;
+  $('spin-capture').classList.add('on');
+  $('btn-send').disabled = true; $('btn-retake').disabled = true;
+  showError('err-capture', '');
+  try {
+    const form = new FormData();
+    form.append('image', capturedBlob, currentSide + '.jpg');
+    await api(`/onboarding/sessions/${session.sessionId}/documents/${currentSide}?replace=true`, {
+      method: 'POST', body: form
+    });
+    show('panel-capture', false);
+    nextSide();
+  } catch (e) {
+    showError('err-capture', e.message + (e.code === 'DOCUMENT_TYPE_MISMATCH'
+      ? ' — verifica que capturaste el documento seleccionado.' : ''));
+  } finally {
+    $('spin-capture').classList.remove('on');
+    $('btn-send').disabled = false; $('btn-retake').disabled = false;
+  }
+});
+
+// ── Paso 4: resultado ────────────────────────────────────────────
+async function showResult() {
+  stopCamera();
+  setStep(3);
+  try {
+    const d = await api(`/onboarding/sessions/${session.sessionId}`);
+    const outcome = d.decision ? d.decision.outcome : 'REVIEW';
+    const box = $('verdict-box');
+    box.className = 'verdict ' + outcome;
+    $('verdict-text').textContent = outcome === 'APPROVED' ? '✔ Verificación aprobada'
+      : outcome === 'REJECTED' ? '✖ Verificación rechazada' : '⚠ Requiere revisión manual';
+    $('verdict-reasons').textContent = d.decision && d.decision.reasons.length
+      ? 'Motivo: ' + d.decision.reasons.map(r => REASON_LABELS[r] || r).join('; ') : '';
+    const score = d.consolidated && d.consolidated.authenticityScore != null
+      ? d.consolidated.authenticityScore : null;
+    $('verdict-score').textContent = score != null ? (score * 100).toFixed(1) + '%' : '—';
+
+    const fields = (d.consolidated && d.consolidated.fields) || {};
+    $('fields-table').querySelector('tbody').innerHTML =
+      Object.entries(fields).map(([k, v]) =>
+        `<tr><th>${FIELD_LABELS[k] || k}</th><td>${v}</td></tr>`).join('') ||
+      '<tr><td class="hint">Sin campos extraídos</td></tr>';
+
+    const checks = (d.consolidated && d.consolidated.crossChecks) || [];
+    $('checks-table').querySelector('tbody').innerHTML =
+      checks.map(c =>
+        `<tr><th>${CHECK_LABELS[c.name] || c.name}</th><td><span class="chip ${c.passed ? 'ok' : 'bad'}">${c.passed ? 'OK' : 'FALLA'}</span></td></tr>`).join('') ||
+      '<tr><td class="hint">Sin verificaciones cruzadas</td></tr>';
+
+    $('sides-table').querySelector('tbody').innerHTML =
+      Object.entries(d.sides || {}).map(([side, s]) => {
+        const sc = s.authenticityScore != null ? (s.authenticityScore * 100).toFixed(0) + '%' : '—';
+        const veto = s.veto ? ' <span class="chip bad">VETO</span>' : '';
+        return `<tr><th>${side === 'FRONT' ? 'Frente' : 'Reverso'}</th><td>${sc}${veto}</td></tr>`;
+      }).join('');
+
+    show('panel-result');
+  } catch (e) {
+    show('panel-result');
+    $('verdict-box').className = 'verdict REVIEW';
+    $('verdict-text').textContent = 'No se pudo obtener el resultado';
+    $('verdict-reasons').textContent = e.message;
+  }
+}
+
+$('btn-restart').addEventListener('click', () => location.reload());
+
+setStep(0);
+loadCatalog();
+</script>
+</body>
+</html>
