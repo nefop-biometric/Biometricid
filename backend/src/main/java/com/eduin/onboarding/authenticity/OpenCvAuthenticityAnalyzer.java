@@ -1,5 +1,6 @@
 package com.eduin.onboarding.authenticity;
 
+import com.eduin.onboarding.authenticity.ml.MontageClassifier;
 import com.eduin.onboarding.authenticity.model.AnalysisDetail;
 import com.eduin.onboarding.authenticity.model.DocumentType;
 import com.eduin.onboarding.authenticity.model.VerificationResult;
@@ -48,9 +49,19 @@ public class OpenCvAuthenticityAnalyzer implements AuthenticityAnalyzer {
     private final MrzAnalyzer mrzAnalyzer;
     private final ImageLoader imageLoader;
     private final DocumentCropService cropService;
+    private final MontageClassifier montageClassifier;
 
     @Value("${app.authenticity.threshold:0.65}")
     private double authenticityThreshold;
+
+    /**
+     * Chequeo ML de foto sobrepuesta (COL_CC_OLD). DESHABILITADO por defecto:
+     * solo activarlo cuando un modelo re-entrenado apruebe la validación
+     * leave-one-out (ver MontageTrainerTest). El resultado ML manda a REVIEW
+     * (cap 0.65), nunca a rechazo directo.
+     */
+    @Value("${app.authenticity.montage-ml.enabled:false}")
+    private boolean montageMlEnabled;
 
     @Value("${app.authenticity.weights.recapture:0.30}")
     private double weightRecapture;
@@ -97,11 +108,25 @@ public class OpenCvAuthenticityAnalyzer implements AuthenticityAnalyzer {
         }
 
         List<AnalysisDetail> analyses = new ArrayList<>();
+        boolean mlSaysMontage = false;
         try {
             analyses.add(recaptureDetector.analyze(mat));
             analyses.add(photocopyDetector.analyze(mat));
             analyses.add(tamperingDetector.analyze(mat, analysisBytes, docType));
             analyses.add(structureValidator.validate(mat, docType, oldSide));
+
+            if (montageMlEnabled && docType == DocumentType.COL_CC_OLD
+                    && side == DocumentSide.FRONT && montageClassifier.isAvailable()) {
+                mlSaysMontage = montageClassifier.isMontage(mat).orElse(false);
+                if (mlSaysMontage) {
+                    analyses.add(AnalysisDetail.builder()
+                            .analyzer("PHOTO_SUBSTITUTION_ML")
+                            .score(0.4)
+                            .passed(false)
+                            .verdict("El clasificador entrenado marca el retrato como foto sobrepuesta")
+                            .build());
+                }
+            }
         } finally {
             mat.release();
         }
@@ -158,6 +183,12 @@ public class OpenCvAuthenticityAnalyzer implements AuthenticityAnalyzer {
                                 : mrz.isDetected() ? "MRZ detectada con errores" : "MRZ no detectada")
                         .build());
             }
+        }
+
+        // El chequeo ML manda a REVIEW (cap 0.65, bajo el umbral de decisión 0.70)
+        // sin activar veto: con dataset pequeño, un falso positivo no debe rechazar.
+        if (mlSaysMontage) {
+            sideScore = Math.min(sideScore, 0.65);
         }
 
         sideScore = Math.max(0.0, Math.min(1.0, sideScore));

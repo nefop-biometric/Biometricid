@@ -12,3 +12,5 @@ backend/captured-documents/
 .idea/
 .vscode/
 *.iml
+backend/ml-dataset/
+backend/models/
