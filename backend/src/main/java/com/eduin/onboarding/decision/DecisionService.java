@@ -2,6 +2,7 @@ package com.eduin.onboarding.decision;
 
 import com.eduin.onboarding.catalog.DocumentSide;
 import com.eduin.onboarding.catalog.DocumentTypeSpec;
+import com.eduin.onboarding.processing.AuthenticityResult;
 import com.eduin.onboarding.processing.OcrResult;
 import com.eduin.onboarding.session.DocumentCapture;
 import com.eduin.onboarding.session.dto.SessionDetailResponse;
@@ -176,6 +177,18 @@ public class DecisionService {
             return "REJECTED";
         }
 
+        // Un chequeo reprobado de foto sobrepuesta (clasificador ML) fuerza REVIEW
+        // explícitamente: es un hallazgo puntual y NO debe diluirse en el promedio
+        // de scores con la otra cara (0.65 del frente + 0.96 del reverso > umbral).
+        boolean photoSubstitution = captures.stream()
+                .map(c -> parseAuthenticity(c.getAuthenticityJson()))
+                .filter(a -> a != null && a.checks() != null)
+                .flatMap(a -> a.checks().stream())
+                .anyMatch(ch -> "PHOTO_SUBSTITUTION_ML".equals(ch.name()) && !ch.passed());
+        if (photoSubstitution) {
+            reasons.add("PHOTO_SUBSTITUTION_SUSPECT");
+        }
+
         boolean crossMismatch = crossChecks.stream()
                 .anyMatch(c -> c.name().startsWith("FRONT_BACK") && !c.passed());
         if (crossMismatch) {
@@ -196,6 +209,18 @@ public class DecisionService {
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private AuthenticityResult parseAuthenticity(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, AuthenticityResult.class);
+        } catch (Exception e) {
+            log.warn("No se pudo parsear authenticity_json almacenado: {}", e.getMessage());
+            return null;
+        }
+    }
 
     private OcrResult parseOcr(String json) {
         if (json == null || json.isBlank()) {

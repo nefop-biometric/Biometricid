@@ -43,16 +43,21 @@ class MontageTrainerTest {
             return;
         }
         String outPath = System.getProperty("ml.out", "models/montage-svm.yml");
+        String featureType = System.getProperty("ml.features", "classic");
 
         ImageLoader loader = new ImageLoader();
         DocumentCropService cropService = new DocumentCropService();
         PhotoZoneLocator zoneLocator = new PhotoZoneLocator();
+        DnnEmbedder embedder = "dnn".equals(featureType)
+                ? new DnnEmbedder(System.getProperty("ml.onnx", "models/dnn/mobilenetv2-7.onnx"))
+                : null;
+        System.out.println("FEATURES: " + featureType);
 
         List<Sample> samples = new ArrayList<>();
         loadDir(Path.of(datasetDir, "montaje"), MontageClassifier.LABEL_MONTAGE,
-                loader, cropService, zoneLocator, samples);
+                loader, cropService, zoneLocator, embedder, samples);
         loadDir(Path.of(datasetDir, "autentica"), MontageClassifier.LABEL_AUTHENTIC,
-                loader, cropService, zoneLocator, samples);
+                loader, cropService, zoneLocator, embedder, samples);
 
         long montages = samples.stream().filter(s -> s.label == MontageClassifier.LABEL_MONTAGE).count();
         System.out.printf("DATASET: %d muestras (%d montaje, %d auténticas)%n",
@@ -62,31 +67,33 @@ class MontageTrainerTest {
             return;
         }
 
-        // ── Evaluación leave-one-out ─────────────────────────────────────────
-        int tp = 0, tn = 0, fp = 0, fn = 0;
-        for (int held = 0; held < samples.size(); held++) {
-            List<Sample> train = new ArrayList<>(samples);
-            Sample test = train.remove(held);
-            SVM svm = fitSvm(train);
-            float predicted = predict(svm, test.features);
-            boolean isMontage = test.label == MontageClassifier.LABEL_MONTAGE;
-            boolean saysMontage = predicted == MontageClassifier.LABEL_MONTAGE;
-            if (isMontage && saysMontage) tp++;
-            else if (!isMontage && !saysMontage) tn++;
-            else if (!isMontage) fp++;
-            else fn++;
-            if (isMontage != saysMontage) {
-                System.out.printf("  LOO FALLO: %s (real=%s, predicho=%s)%n",
-                        test.name, isMontage ? "montaje" : "auténtica",
-                        saysMontage ? "montaje" : "auténtica");
+        // ── Barrido de peso de clase montaje con evaluación leave-one-out ────
+        double[] weightCandidates = { 1.0, 2.0, 3.0, 5.0, 8.0, 11.4 };
+        for (double w : weightCandidates) {
+            int tp = 0, tn = 0, fp = 0, fn = 0;
+            List<String> failures = new ArrayList<>();
+            for (int held = 0; held < samples.size(); held++) {
+                List<Sample> train = new ArrayList<>(samples);
+                Sample test = train.remove(held);
+                SVM svm = fitSvm(train, w);
+                float predicted = predict(svm, test.features);
+                boolean isMontage = test.label == MontageClassifier.LABEL_MONTAGE;
+                boolean saysMontage = predicted == MontageClassifier.LABEL_MONTAGE;
+                if (isMontage && saysMontage) tp++;
+                else if (!isMontage && !saysMontage) tn++;
+                else if (!isMontage) fp++;
+                else { fn++; failures.add(test.name); }
+                svm.close();
             }
-            svm.close();
+            System.out.printf("LOO w=%.1f: aciertos=%d/%d  montajesDetectados=%d/%d  falsosPositivos=%d/%d  (FN: %s)%n",
+                    w, tp + tn, samples.size(), tp, tp + fn, fp, tn + fp, String.join(",", failures));
         }
-        System.out.printf("LOO: aciertos=%d/%d  TP=%d TN=%d FP=%d FN=%d%n",
-                tp + tn, samples.size(), tp, tn, fp, fn);
+
+        double finalWeight = Double.parseDouble(System.getProperty("ml.weight", "3.0"));
+        System.out.printf("PESO FINAL: %.1f%n", finalWeight);
 
         // ── Modelo final con todas las muestras ──────────────────────────────
-        SVM finalModel = fitSvm(samples);
+        SVM finalModel = fitSvm(samples, finalWeight);
         Files.createDirectories(Path.of(outPath).toAbsolutePath().getParent());
         finalModel.save(outPath);
         System.out.println("MODELO GUARDADO: " + outPath);
@@ -100,7 +107,7 @@ class MontageTrainerTest {
 
     private static void loadDir(Path dir, float label, ImageLoader loader,
                                 DocumentCropService cropService, PhotoZoneLocator zoneLocator,
-                                List<Sample> out) throws Exception {
+                                DnnEmbedder embedder, List<Sample> out) throws Exception {
         if (!Files.isDirectory(dir)) return;
         try (Stream<Path> files = Files.list(dir)) {
             for (Path f : files.sorted().toList()) {
@@ -115,21 +122,24 @@ class MontageTrainerTest {
                     docRect.close();
                 }
                 Rect zone = zoneLocator.locate(doc);
-                out.add(new Sample(f.getFileName().toString(), label,
-                        PhotoZoneFeatures.extract(doc, zone)));
+                float[] features = embedder != null
+                        ? embedder.embed(doc, zone)
+                        : PhotoZoneFeatures.extract(doc, zone);
+                out.add(new Sample(f.getFileName().toString(), label, features));
                 zone.close();
                 doc.release();
             }
         }
     }
 
-    private static SVM fitSvm(List<Sample> train) {
-        Mat features = new Mat(train.size(), PhotoZoneFeatures.DIMENSIONS, CV_32F);
+    private static SVM fitSvm(List<Sample> train, double montageWeight) {
+        int dims = train.get(0).features.length;
+        Mat features = new Mat(train.size(), dims, CV_32F);
         Mat labels = new Mat(train.size(), 1, CV_32S);
         FloatIndexer fi = features.createIndexer();
         org.bytedeco.javacpp.indexer.IntIndexer li = labels.createIndexer();
         for (int i = 0; i < train.size(); i++) {
-            for (int j = 0; j < PhotoZoneFeatures.DIMENSIONS; j++) {
+            for (int j = 0; j < dims; j++) {
                 fi.put(i, j, train.get(i).features[j]);
             }
             li.put(i, 0, (int) train.get(i).label);
@@ -142,6 +152,16 @@ class MontageTrainerTest {
         // Lineal y con C moderado: con decenas de muestras, un kernel RBF memoriza.
         svm.setKernel(SVM.LINEAR);
         svm.setC(1.0);
+        // Peso de la clase montaje: sin esto, con clases desbalanceadas
+        // (pocos montajes, muchas auténticas) el SVM predice siempre la mayoritaria.
+        if (montageWeight > 0) {
+            Mat weights = new Mat(2, 1, CV_32F);
+            FloatIndexer wi = weights.createIndexer();
+            wi.put(0, 0, 1.0f);                       // clase 0 = auténtica
+            wi.put(1, 0, (float) montageWeight);      // clase 1 = montaje
+            wi.release();
+            svm.setClassWeights(weights);
+        }
         svm.setTermCriteria(new TermCriteria(TermCriteria.MAX_ITER + TermCriteria.EPS, 10000, 1e-6));
         TrainData data = TrainData.create(features, ROW_SAMPLE, labels);
         svm.train(data);

@@ -118,6 +118,8 @@ public class OpenCvAuthenticityAnalyzer implements AuthenticityAnalyzer {
             if (montageMlEnabled && docType == DocumentType.COL_CC_OLD
                     && side == DocumentSide.FRONT && montageClassifier.isAvailable()) {
                 mlSaysMontage = montageClassifier.isMontage(mat).orElse(false);
+                log.info("Chequeo ML de montaje [{} {}]: {}", docType, side,
+                        mlSaysMontage ? "MONTAJE" : "auténtica");
                 if (mlSaysMontage) {
                     analyses.add(AnalysisDetail.builder()
                             .analyzer("PHOTO_SUBSTITUTION_ML")

@@ -13,4 +13,3 @@ backend/captured-documents/
 .vscode/
 *.iml
 backend/ml-dataset/
-backend/models/
