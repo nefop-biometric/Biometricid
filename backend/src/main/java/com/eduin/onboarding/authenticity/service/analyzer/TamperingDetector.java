@@ -256,16 +256,15 @@ public class TamperingDetector {
             // la textura del carnet (guilloché) o un borde de recorte, la foto
             // fue recortada y pegada (montaje).
             ringScore = analyzeFaceRing(image, face, findings);
-
-            // Cédula amarilla (COL_CC_OLD): el retrato auténtico es una impresión
-            // integrada al carnet (apagada, texturizada, envejecida). Un anillo de
-            // PAPEL FOTOGRÁFICO alrededor de la cabeza —brillante, uniforme y casi
-            // sin color— delata una foto real recortada y sobrepuesta (montaje),
-            // aunque su fondo liso engañe al análisis de densidad de bordes.
-            if (docType == com.eduin.onboarding.authenticity.model.DocumentType.COL_CC_OLD) {
-                ringScore = Math.min(ringScore, analyzePhotoPaperRing(image, face, findings));
-            }
             face.close();
+            // NOTA (2026-08-03): se intentó detectar foto sobrepuesta en COL_CC_OLD
+            // por estadísticas del anillo (brillo/saturación/uniformidad del fondo
+            // tras la cabeza). REVERTIDO: las cédulas amarillas auténticas bien
+            // conservadas tienen fondo de foto tan claro y liso como el papel
+            // fotográfico de un montaje — las firmas son indistinguibles (verificado
+            // con capturas reales de ambos casos). Detectar este fraude requiere
+            // otra técnica (dataset + clasificador de textura, captura multi-frame
+            // o verificación contra fuente); ver TamperingDiagnosticTest para medir.
         } else {
             // Fallback: zona fija por tipo de documento
             px = (int)(photoZone[0] * imgW);
@@ -298,81 +297,6 @@ public class TamperingDetector {
         if (borderScore < 0.60) score = Math.min(score, borderScore);
         if (ringScore < 0.60)   score = Math.min(score, ringScore);
         return Math.max(0.0, score);
-    }
-
-    /**
-     * Detección de foto sobrepuesta en cédula amarilla: mide si las franjas
-     * alrededor de la cabeza tienen la firma de PAPEL FOTOGRÁFICO (fondo de
-     * estudio): sin bordes, brillante, muy uniforme y casi sin saturación.
-     *
-     * Calibrado con capturas reales (2026-08): montajes físicos dan franjas con
-     * V 169-224 (±4-6) y S 11-23; las auténticas dan V 87-126 con S 35-51, o
-     * franjas saturadas/yellow del carnet (S 40-80), o directamente no se
-     * detecta el rostro (retrato impreso lavado). Umbral: 2 de 3 franjas.
-     */
-    private double analyzePhotoPaperRing(Mat image, Rect face, List<String> findings) {
-        Mat gray = new Mat(), edges = new Mat(), hsv = new Mat();
-        try {
-            cvtColor(image, gray, COLOR_BGR2GRAY);
-            GaussianBlur(gray, gray, new Size(3, 3), 0);
-            Canny(gray, edges, 60, 160);
-            cvtColor(image, hsv, COLOR_BGR2HSV);
-
-            int fw = face.width(), fh = face.height();
-            int band = Math.max(8, (int)(fw * 0.22));
-            int[][] patches = {
-                { face.x() - band,      face.y() - (int)(fh * 0.15), band, (int)(fh * 0.9) },
-                { face.x() + fw,        face.y() - (int)(fh * 0.15), band, (int)(fh * 0.9) },
-                { face.x() - band / 2,  face.y() - (int)(fh * 0.45) - band / 2, fw + band, band }
-            };
-
-            int photoPaperBands = 0, measuredBands = 0;
-            for (int[] p : patches) {
-                int x = Math.max(0, p[0]), y = Math.max(0, p[1]);
-                int w = Math.min(p[2], image.cols() - x), h = Math.min(p[3], image.rows() - y);
-                if (w < 4 || h < 4) continue;
-                measuredBands++;
-
-                Rect r = new Rect(x, y, w, h);
-                Mat ePatch = edges.apply(r);
-                double density = (double) countNonZero(ePatch) / ((double) w * h);
-                ePatch.release();
-
-                Mat hPatch = hsv.apply(r);
-                Mat mean = new Mat(), std = new Mat();
-                meanStdDev(hPatch, mean, std);
-                DoubleIndexer mIdx = mean.createIndexer();
-                DoubleIndexer sIdx = std.createIndexer();
-                double satMean = mIdx.get(1);
-                double valMean = mIdx.get(2);
-                double valStd  = sIdx.get(2);
-                mIdx.release(); sIdx.release();
-                hPatch.release(); mean.release(); std.release();
-
-                // Discriminadores principales (calibrados 2026-08): brillo alto
-                // (montajes V 169-224 vs auténticas V 87-126) y baja saturación
-                // (auténticas con carnet visible: S 40-80). La uniformidad tolera
-                // el degradado de iluminación de una webcam (±35).
-                boolean photoPaper = density < 0.020   // sin textura de impresión
-                        && valMean > 150               // brillante (papel foto)
-                        && valStd < 35                 // uniforme (tolera luz irregular)
-                        && satMean < 30;               // sin el tono del carnet
-                if (photoPaper) photoPaperBands++;
-            }
-
-            if (measuredBands >= 2 && photoPaperBands >= 2) {
-                findings.add(String.format(
-                        "Fondo de PAPEL FOTOGRÁFICO alrededor del rostro (%d/%d franjas: " +
-                        "brillante, uniforme y sin textura del carnet). En la cédula amarilla " +
-                        "el retrato auténtico está impreso e integrado — indicio fuerte de " +
-                        "fotografía recortada y sobrepuesta (montaje).",
-                        photoPaperBands, measuredBands));
-                return 0.40;
-            }
-            return 1.0;
-        } finally {
-            gray.release(); edges.release(); hsv.release();
-        }
     }
 
     /**
@@ -545,9 +469,12 @@ public class TamperingDetector {
         if (outerSamples == 0) return 0.85;
         outerNoise /= outerSamples;
 
-        // Si el ruido DENTRO de la foto es muy diferente al ruido FUERA, hay discontinuidad
+        // Si el ruido DENTRO de la foto es muy diferente al ruido FUERA, hay discontinuidad.
+        // Umbral 3.2x (2026-08-03): un retrato impreso nítido sobre carnet liso llega a
+        // ~2.8x en capturas de webcam de cédulas AUTÉNTICAS (falso positivo verificado);
+        // los montajes físicos medidos no activaron este chequeo en ningún caso.
         double ratio = (innerNoise + 0.01) / (outerNoise + 0.01);
-        boolean anomaly = ratio > 2.5 || ratio < 0.35;
+        boolean anomaly = ratio > 3.2 || ratio < 0.30;
 
         if (anomaly) {
             findings.add(String.format(
