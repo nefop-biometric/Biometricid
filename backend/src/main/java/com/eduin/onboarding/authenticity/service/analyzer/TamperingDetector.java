@@ -349,9 +349,13 @@ public class TamperingDetector {
                 mIdx.release(); sIdx.release();
                 hPatch.release(); mean.release(); std.release();
 
-                boolean photoPaper = density < 0.015   // sin textura de impresión
+                // Discriminadores principales (calibrados 2026-08): brillo alto
+                // (montajes V 169-224 vs auténticas V 87-126) y baja saturación
+                // (auténticas con carnet visible: S 40-80). La uniformidad tolera
+                // el degradado de iluminación de una webcam (±35).
+                boolean photoPaper = density < 0.020   // sin textura de impresión
                         && valMean > 150               // brillante (papel foto)
-                        && valStd < 15                 // uniformidad extrema
+                        && valStd < 35                 // uniforme (tolera luz irregular)
                         && satMean < 30;               // sin el tono del carnet
                 if (photoPaper) photoPaperBands++;
             }
